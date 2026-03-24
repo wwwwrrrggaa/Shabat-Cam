@@ -1,0 +1,6 @@
+ultralytics
+torch
+transitions
+numpy
+opencv-python
+
