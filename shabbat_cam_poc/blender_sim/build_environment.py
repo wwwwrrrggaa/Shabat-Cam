@@ -8,6 +8,11 @@ import random
 import mathutils
 import json
 
+# Ensure Blender import addons for common mesh formats are enabled. If these fail we want
+# Blender to raise so the user can see the problem (per request: don't swallow errors).
+bpy.ops.wm.addon_enable(module='io_mesh_stl')
+bpy.ops.wm.addon_enable(module='io_mesh_3mf')
+
 # --- 1. PARSE ARGUMENTS ---
 argv = sys.argv
 if "--" in argv:
