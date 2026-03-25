@@ -121,8 +121,17 @@ def import_asset(filepaths, name, material, scale=(0.001, 0.001, 0.001), yolo_cl
     for path in filepaths:
         if os.path.exists(path):
             before = set(bpy.data.objects)
-            try: bpy.ops.wm.stl_import(filepath=path)
-            except AttributeError: bpy.ops.import_mesh.stl(filepath=path)
+            # Call the exact import operator for the file extension. Do not swallow errors;
+            # let Blender raise if an importer is missing or the file is invalid.
+            ext = os.path.splitext(path)[1].lower()
+            if ext == '.stl':
+                bpy.ops.import_mesh.stl(filepath=path)
+            elif ext == '.3mf':
+                bpy.ops.import_mesh.threemf(filepath=path)
+            else:
+                # For any other extension (e.g., .step) invoke a generic import attempt that will fail
+                # loudly if no operator exists — this is intentional per project policy.
+                bpy.ops.import_scene.autodetect(filepath=path)
             imported.extend(list(set(bpy.data.objects) - before))
     meshes = [o for o in imported if o.type == 'MESH']
     if meshes:
