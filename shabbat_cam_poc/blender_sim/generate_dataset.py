@@ -1,40 +1,39 @@
 import subprocess
 import os
-import random
 
 BLENDER_EXE = r"C:\Users\yonat\PycharmProjects\Shabat-Cam\shabbat_cam_poc\blender_sim\Blender\blender.exe"
 BUILDER_SCRIPT = os.path.abspath("build_environment.py")
 
 def generate_full_batch():
-    runs = 3
-    frames_per_run = 50 # Adjust higher for smoother motion
+    runs = 50
+    frames_per_run = 50
     ammo_pool = ["M795", "M825", "M107"]
 
     print(f"--- Starting Synthetic Data Generation: {runs} Runs ---")
 
     for run_id in range(runs):
-        selected_ammo = random.choice(ammo_pool)
-        print(f"\n[Run {run_id}] Selected Ammo: {selected_ammo}")
+        selected_ammo = ammo_pool[run_id % len(ammo_pool)]
+        print(f"\n[Run {run_id + 1}/{runs}] Ammo: {selected_ammo} | Rendering {frames_per_run} frames...")
 
-        for frame in range(frames_per_run):
-            progress = frame / float(frames_per_run - 1)
-            output_name = f"run_{run_id}_ammo_{selected_ammo}_frame_{frame:04d}"
+        command = [
+            BLENDER_EXE,
+            "--background",
+            "--python", BUILDER_SCRIPT,
+            "--",
+            "--run_id", str(run_id),
+            "--frames", str(frames_per_run),
+            "--ammo_type", selected_ammo
+        ]
 
-            command = [
-                BLENDER_EXE,
-                "--background",
-                "--python", BUILDER_SCRIPT,
-                "--",
-                "--render",
-                "--progress", str(progress),
-                "--output", output_name,
-                "--ammo_type", selected_ammo
-            ]
+        # Sanitize environment to prevent PyCharm from crashing Blender's internal Python
+        clean_env = os.environ.copy()
+        clean_env.pop("PYTHONHOME", None)
+        clean_env.pop("PYTHONPATH", None)
 
-            print(f" Rendering {output_name}...", end="\r")
-            subprocess.run(command, stdout=subprocess.DEVNULL)
+        # Removed DEVNULL so you can actually watch Blender's progress frame-by-frame
+        subprocess.run(command, env=clean_env)
 
-    print("\nBatch Complete. Data saved to 'training_data/'")
+    print("\n\nBatch Complete! Your YOLO dataset and Scene Metadata are ready.")
 
 if __name__ == "__main__":
     generate_full_batch()

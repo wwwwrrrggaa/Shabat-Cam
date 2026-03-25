@@ -1,0 +1,6 @@
+shabbat_cam_poc/blender_sim/**.jpeg filter=lfs diff=lfs merge=lfs -text
+shabbat_cam_poc/blender_sim/**.stl filter=lfs diff=lfs merge=lfs -text
+shabbat_cam_poc/blender_sim/**.3mf filter=lfs diff=lfs merge=lfs -text
+shabbat_cam_poc/blender_sim/**.step filter=lfs diff=lfs merge=lfs -text
+shabbat_cam_poc/blender_sim/**.png filter=lfs diff=lfs merge=lfs -text
+shabbat_cam_poc/blender_sim/**.jpg filter=lfs diff=lfs merge=lfs -text
