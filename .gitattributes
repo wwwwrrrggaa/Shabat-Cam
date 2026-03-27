@@ -4,3 +4,4 @@ shabbat_cam_poc/blender_sim/**.3mf filter=lfs diff=lfs merge=lfs -text
 shabbat_cam_poc/blender_sim/**.step filter=lfs diff=lfs merge=lfs -text
 shabbat_cam_poc/blender_sim/**.png filter=lfs diff=lfs merge=lfs -text
 shabbat_cam_poc/blender_sim/**.jpg filter=lfs diff=lfs merge=lfs -text
+shabbat_cam_poc/ai_training/runs/obb/Breech_AI/yolo26_obb_v1/weights/best.pt filter=lfs diff=lfs merge=lfs -text
