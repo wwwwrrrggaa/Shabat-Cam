@@ -1,8 +1,9 @@
 import subprocess
 import os
+import random
 
-BLENDER_EXE = r"C:\Users\yonat\PycharmProjects\Shabat-Cam\shabbat_cam_poc\blender_sim\Blender\blender.exe"
-BUILDER_SCRIPT = os.path.abspath("build_environment.py")
+BLENDER_EXE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Blender", "blender.exe")
+BUILDER_SCRIPT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "build_environment.py")
 
 def generate_full_batch():
     # 100 Runs * 50 Frames = 5,000 Images. Perfect for a YOLO-OBB POC.
@@ -13,7 +14,7 @@ def generate_full_batch():
     print(f"--- Starting Synthetic Data Generation: {runs} Runs ---")
 
     for run_id in range(runs):
-        selected_ammo = ammo_pool[run_id % len(ammo_pool)]
+        selected_ammo = random.choice(ammo_pool)
         print(f"\n[Run {run_id + 1}/{runs}] Ammo: {selected_ammo} | Rendering {frames_per_run} frames...")
 
         command = [

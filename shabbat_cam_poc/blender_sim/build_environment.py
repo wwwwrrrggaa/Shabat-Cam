@@ -385,6 +385,29 @@ def update_scene(t, frame):
         ease_f = 0.5 - math.cos(f * math.pi) * 0.5
         mekhases.location = retreat_start.lerp(m_home, ease_f)
 
+# Bake keyframes if we are running in demo mode
+if args.demo:
+    bpy.context.scene.frame_start = 0
+    bpy.context.scene.frame_end = args.frames - 1
+
+    # Loop through objects that move to clear their animation data
+    for obj in [loader, mekhases, active_shell, active_prop]:
+        if obj and obj.animation_data:
+             obj.animation_data_clear()
+
+    # Create the keyframes
+    for f_idx in range(args.frames):
+        bpy.context.scene.frame_set(f_idx)
+        t = f_idx / max(1, (args.frames - 1))
+        update_scene(t, f_idx)
+
+        for obj in [loader, mekhases, active_shell, active_prop]:
+            if obj:
+                obj.keyframe_insert(data_path="location", index=-1)
+                obj.keyframe_insert(data_path="rotation_euler", index=-1)
+    
+    # Reset back to start
+    bpy.context.scene.frame_set(0)
 
 def get_obb(scene, cam_ob, mesh_ob):
     depsgraph = bpy.context.evaluated_depsgraph_get()
@@ -446,16 +469,17 @@ def export_labels(filepath, scene, cam):
 
 
 # --- EXECUTION ---
-scene = bpy.context.scene
-rgb_dir = os.path.join(base_dir, "training_data", "images", "train")
-label_dir = os.path.join(base_dir, "training_data", "labels", "train")
-os.makedirs(rgb_dir, exist_ok=True)
-os.makedirs(label_dir, exist_ok=True)
+if not args.demo:
+    scene = bpy.context.scene
+    rgb_dir = os.path.join(base_dir, "training_data", "images", "train")
+    label_dir = os.path.join(base_dir, "training_data", "labels", "train")
+    os.makedirs(rgb_dir, exist_ok=True)
+    os.makedirs(label_dir, exist_ok=True)
 
-for f_idx in range(args.frames):
-    update_scene(f_idx / (args.frames - 1), f_idx)
-    bpy.context.view_layer.update()
-    name = f"run_{args.run_id:03d}_{selected_ammo}_f{f_idx:04d}"
-    scene.render.filepath = os.path.join(rgb_dir, name + ".png")
-    bpy.ops.render.render(write_still=True)
-    export_labels(os.path.join(label_dir, name + ".txt"), scene, cam)
+    for f_idx in range(args.frames):
+        update_scene(f_idx / (args.frames - 1), f_idx)
+        bpy.context.view_layer.update()
+        name = f"run_{args.run_id:03d}_{selected_ammo}_f{f_idx:04d}"
+        scene.render.filepath = os.path.join(rgb_dir, name + ".png")
+        bpy.ops.render.render(write_still=True)
+        export_labels(os.path.join(label_dir, name + ".txt"), scene, cam)
