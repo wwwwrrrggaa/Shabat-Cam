@@ -1,102 +1,118 @@
-"""fsm_brain.py
+class BreechFSM:
+    def __init__(
+        self, breech_zone_bbox, expected_shell, expected_prop, patience_frames=8
+    ):
+        self.breech_zone = breech_zone_bbox
+        self.patience = patience_frames
 
-Finite State Machine controller for the turret interlock (observer pattern).
-This is a simple, testable FSM implemented without external dependencies.
-"""
-from __future__ import annotations
+        self.expected_shell = expected_shell
+        self.expected_prop = expected_prop
 
-from typing import Any, List
+        # --- ARCHITECTURE CHANGE: DECOUPLING STATE FROM SAFETY ---
+        self.sequence_state = "EMPTY"  # Physical progression
+        self.safety_status = "CLEAR"  # Tactical validation
+        self.chambered_inventory = []  # The "Final Tally" of what's inside
 
+        self.frames_since_last_seen = 0
+        self.last_known_bbox = None
+        self.last_known_name = None
 
-class Observer:
-    def update(self, event_name: str, **data: Any) -> None:
-        raise NotImplementedError
+    def _intersects_breech(self, bbox):
+        bx1, by1, bx2, by2 = self.breech_zone
+        ox1, oy1 = min(bbox[0::2]), min(bbox[1::2])
+        ox2, oy2 = max(bbox[0::2]), max(bbox[1::2])
+        if ox1 < bx2 and ox2 > bx1 and oy1 < by2 and oy2 > by1:
+            return True
+        return False
 
+    def trigger_danger(self, reason):
+        # Once safety is compromised, latch the first error message
+        if self.safety_status == "CLEAR":
+            self.safety_status = reason
+        print(f"\n[!!!] SAFETY COMPROMISED: {reason} [!!!]\n")
 
-class Observable:
-    def __init__(self) -> None:
-        self._observers: List[Observer] = []
+    def update(self, tracked_objects):
+        shells = [obj for obj in tracked_objects if obj["class"] == 0]
+        props = [obj for obj in tracked_objects if obj["class"] == 1]
 
-    def register(self, o: Observer) -> None:
-        if o not in self._observers:
-            self._observers.append(o)
+        # ---------------------------------------------------------
+        # STATE: EMPTY
+        # ---------------------------------------------------------
+        if self.sequence_state == "EMPTY":
+            if props:
+                self.trigger_danger("PROPELLANT DETECTED BEFORE SHELL.")
+            elif shells:
+                self.sequence_state = "SHELL_DETECTED"
+                self.frames_since_last_seen = 0
+                self.last_known_bbox = shells[0]["bbox"]
+                self.last_known_name = shells[0]["name"]
 
-    def unregister(self, o: Observer) -> None:
-        if o in self._observers:
-            self._observers.remove(o)
+        # ---------------------------------------------------------
+        # STATE: SHELL_DETECTED
+        # ---------------------------------------------------------
+        elif self.sequence_state == "SHELL_DETECTED":
+            if shells:
+                self.frames_since_last_seen = 0
+                self.last_known_bbox = shells[0]["bbox"]
+                self.last_known_name = shells[0]["name"]
+            else:
+                self.frames_since_last_seen += 1
+                if self.frames_since_last_seen > self.patience:
+                    if self._intersects_breech(self.last_known_bbox):
+                        # Shell is physically in! Update Tally.
+                        self.chambered_inventory.append(self.last_known_name)
+                        self.sequence_state = "SHELL_CHAMBERED"
 
-    def notify(self, event_name: str, **data: Any) -> None:
-        for o in list(self._observers):
-            try:
-                o.update(event_name, **data)
-            except Exception:
-                pass
+                        # Validate what just went in
+                        if self.last_known_name != self.expected_shell:
+                            self.trigger_danger(
+                                f"WRONG SHELL LOADED: {self.last_known_name}"
+                            )
 
+                        self.frames_since_last_seen = 0
+                    else:
+                        self.trigger_danger("SHELL DROPPED OUTSIDE BREECH.")
+                        self.sequence_state = "EMPTY"  # Reset physical state
 
-class FSMBrain(Observable):
-    STATES = [
-        "Tray_Empty",
-        "Shell_Loaded",
-        "Charge_Loaded",
-        "Breech_Locked",
-        "Fatal_Error",
-    ]
+        # ---------------------------------------------------------
+        # STATE: SHELL_CHAMBERED
+        # ---------------------------------------------------------
+        elif self.sequence_state == "SHELL_CHAMBERED":
+            if shells:
+                self.trigger_danger(
+                    "DOUBLE LOAD DETECTED. SHELL PRESENTED TO LOADED BREECH."
+                )
+            elif props:
+                self.sequence_state = "PROP_DETECTED"
+                self.frames_since_last_seen = 0
+                self.last_known_bbox = props[0]["bbox"]
+                self.last_known_name = props[0]["name"]
 
-    def __init__(self) -> None:
-        super().__init__()
-        self.state = "Tray_Empty"
+        # ---------------------------------------------------------
+        # STATE: PROP_DETECTED
+        # ---------------------------------------------------------
+        elif self.sequence_state == "PROP_DETECTED":
+            if props:
+                self.frames_since_last_seen = 0
+                self.last_known_bbox = props[0]["bbox"]
+                self.last_known_name = props[0]["name"]
+            else:
+                self.frames_since_last_seen += 1
+                if self.frames_since_last_seen > self.patience:
+                    if self._intersects_breech(self.last_known_bbox):
+                        # Propellant is physically in! Update Tally.
+                        self.chambered_inventory.append(self.last_known_name)
+                        self.sequence_state = "SECURED"
 
-    def transition(self, event: str, **data: Any) -> None:
-        """Apply a transition event and notify observers. This follows the diagram in fsm_diagram.md."""
-        prev = self.state
-        # very simple transition logic for demo purposes
-        if self.state == "Tray_Empty":
-            if event == "LIDAR_YOLO_CONFIRM_SHELL":
-                self.state = "Shell_Loaded"
-            elif event == "LIDAR_CONFIRM_BAG":
-                self.state = "Fatal_Error"
-        elif self.state == "Shell_Loaded":
-            if event == "LIDAR_CONFIRM_BAG":
-                self.state = "Charge_Loaded"
-            elif event == "LIDAR_YOLO_CONFIRM_SHELL":
-                self.state = "Fatal_Error"
-            elif event == "LIDAR_REVERSE_MOTION":
-                self.state = "Tray_Empty"
-        elif self.state == "Charge_Loaded":
-            if event == "BREECH_SENSOR_CLOSED":
-                self.state = "Breech_Locked"
-            elif event == "LIDAR_REVERSE_MOTION":
-                self.state = "Shell_Loaded"
-            elif event == "LIDAR_YOLO_CONFIRM_SHELL":
-                self.state = "Fatal_Error"
-        elif self.state == "Breech_Locked":
-            if event == "FIRE_SHOCKWAVE_DETECTED":
-                self.state = "Tray_Empty"
-            elif event == "BREECH_SENSOR_OPENED":
-                self.state = "Charge_Loaded"
-        elif self.state == "Fatal_Error":
-            if event == "MANUAL_SYSTEM_RESET":
-                self.state = "Tray_Empty"
+                        # Validate what just went in
+                        if self.last_known_name != self.expected_prop:
+                            self.trigger_danger(
+                                f"WRONG PROPELLANT: {self.last_known_name}"
+                            )
+                    else:
+                        self.trigger_danger("PROPELLANT DROPPED OUTSIDE BREECH.")
+                        self.sequence_state = (
+                            "SHELL_CHAMBERED"  # Revert to previous physical state
+                        )
 
-        if prev != self.state:
-            self.notify("state_changed", source=prev, dest=self.state, event=event, data=data)
-
-    def get_state(self) -> str:
-        return self.state
-
-
-# Simple print observer for quick testing
-class PrintObserver(Observer):
-    def update(self, event_name: str, **data: Any) -> None:
-        print(f"[PrintObserver] {event_name}: {data}")
-
-
-if __name__ == "__main__":
-    f = FSMBrain()
-    f.register(PrintObserver())
-    print("initial:", f.get_state())
-    f.transition("LIDAR_YOLO_CONFIRM_SHELL")
-    f.transition("LIDAR_CONFIRM_BAG")
-    f.transition("BREECH_SENSOR_CLOSED")
-    f.transition("FIRE_SHOCKWAVE_DETECTED")
-    print("final:", f.get_state())
+        return self.sequence_state, self.safety_status, self.chambered_inventory

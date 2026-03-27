@@ -1,40 +1,106 @@
-"""train_yolo.py
+import os
+import random
+import shutil
+import yaml
+from pathlib import Path
+from ultralytics import YOLO
+from huggingface_hub import hf_hub_download
 
-Stub YOLO training script. Uses ultralytics API if available; otherwise runs a dry-run.
-"""
-from __future__ import annotations
+# --- 1. CONFIGURATION ---
+BASE_DIR = Path(__file__).parent.parent.resolve()
+# תיקון נתיב - וודא שהשם תואם בדיוק לתיקייה שלך (אותיות קטנות/גדולות)
+DATA_DIR = BASE_DIR / "Blender_sim" / "training_data"
+IMG_TRAIN = DATA_DIR / "images" / "train"
+LBL_TRAIN = DATA_DIR / "labels" / "train"
+IMG_VAL = DATA_DIR / "images" / "val"
+LBL_VAL = DATA_DIR / "labels" / "val"
 
-from typing import Dict, Any
-import importlib
+SPLIT_RATIO = 0.8
 
 
-def train_yolo(dataset_path: str = "./dataset", epochs: int = 1, dry_run: bool = True) -> Dict[str, Any]:
-    """Train a YOLO model on the provided dataset (dry-run by default).
+def setup_directories():
+    IMG_VAL.mkdir(parents=True, exist_ok=True)
+    LBL_VAL.mkdir(parents=True, exist_ok=True)
 
-    Returns a summary dict on success.
-    """
-    print(f"[train_yolo] dataset_path={dataset_path} epochs={epochs} dry_run={dry_run}")
-    if dry_run:
-        print("[train_yolo] Dry-run: not invoking real training")
-        return {"status": "dry_run", "epochs": epochs}
 
-    # Real training would go here, e.g. using ultralytics.YOLO
-    ultralytics = importlib.util.find_spec("ultralytics")
-    if ultralytics is None:
-        print("[train_yolo] ultralytics not available")
-        return {"status": "failed", "reason": "ultralytics missing"}
+def perform_split():
+    print("--- Performing Train/Val Split ---")
+    all_images = list(IMG_TRAIN.glob("*.png"))
 
+    if len(all_images) == 0:
+        print(f"❌ No images found in: {IMG_TRAIN}")
+        print("Check if your Blender output folder is correct.")
+        return
+
+    val_images = list(IMG_VAL.glob("*.png"))
+    if len(val_images) > 0:
+        print(f"Split already performed. Skipping.")
+        return
+
+    random.shuffle(all_images)
+    split_index = int(len(all_images) * SPLIT_RATIO)
+    val_subset = all_images[split_index:]
+
+    for img_path in val_subset:
+        label_path = LBL_TRAIN / (img_path.stem + ".txt")
+        shutil.move(str(img_path), str(IMG_VAL / img_path.name))
+        if label_path.exists():
+            shutil.move(str(label_path), str(LBL_VAL / label_path.name))
+    print(f"✅ Split complete.")
+
+
+def create_yaml():
+    yaml_path = DATA_DIR / "breech_obb.yaml"
+    dataset_config = {
+        "path": str(DATA_DIR),
+        "train": "images/train",
+        "val": "images/val",
+        "names": {0: "Shell", 1: "Propellant"},
+    }
+    with open(yaml_path, "w") as f:
+        yaml.dump(dataset_config, f, default_flow_style=False)
+    return yaml_path
+
+
+def train_model(yaml_path):
+    print("\n--- Downloading YOLO26-S-OBB from Hugging Face ---")
     try:
-        YOLO = importlib.import_module("ultralytics").YOLO
-    except Exception:
-        print("[train_yolo] Failed to import YOLO from ultralytics")
-        return {"status": "failed", "reason": "import_error"}
+        # הורדה ישירה מה-Repo ששלחת
+        model_path = hf_hub_download(
+            repo_id="openvision/yolo26-s-obb", filename="model.pt"
+        )
+        print(f"✅ Model downloaded to: {model_path}")
+    except Exception as e:
+        print(f"❌ Failed to download from HF: {e}")
+        return
 
-    # placeholder: instantiate and run training
-    model = YOLO("yolov8n.pt")
-    model.train(data=dataset_path, epochs=epochs)
-    return {"status": "trained", "epochs": epochs}
+    model = YOLO(model_path)
+
+    print("\n--- Starting Training ---")
+    model.train(
+        data=str(yaml_path),
+        epochs=50,
+        imgsz=640,
+        batch=16,
+        device=0,
+        project="Breech_AI",
+        name="yolo26_obb_v1",
+        # Augmentations
+        hsv_h=0.03,
+        hsv_s=0.6,
+        hsv_v=0.6,
+        degrees=180.0,
+        translate=0.2,
+        scale=0.4,
+        perspective=0.002,
+        mosaic=1.0,
+        mixup=0.15,
+    )
 
 
 if __name__ == "__main__":
-    train_yolo("./dataset", epochs=1, dry_run=True)
+    # וודא שהספרייה מותקנת: pip install huggingface_hub
+    setup_directories()
+    perform_split()
+    y_file = create_yaml()
+    train_model(y_file)

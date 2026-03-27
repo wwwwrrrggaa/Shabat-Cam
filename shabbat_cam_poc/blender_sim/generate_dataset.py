@@ -5,7 +5,8 @@ BLENDER_EXE = r"C:\Users\yonat\PycharmProjects\Shabat-Cam\shabbat_cam_poc\blende
 BUILDER_SCRIPT = os.path.abspath("build_environment.py")
 
 def generate_full_batch():
-    runs = 50
+    # 100 Runs * 50 Frames = 5,000 Images. Perfect for a YOLO-OBB POC.
+    runs = 100
     frames_per_run = 50
     ammo_pool = ["M795", "M825", "M107"]
 
@@ -25,15 +26,13 @@ def generate_full_batch():
             "--ammo_type", selected_ammo
         ]
 
-        # Sanitize environment to prevent PyCharm from crashing Blender's internal Python
         clean_env = os.environ.copy()
         clean_env.pop("PYTHONHOME", None)
         clean_env.pop("PYTHONPATH", None)
 
-        # Removed DEVNULL so you can actually watch Blender's progress frame-by-frame
         subprocess.run(command, env=clean_env)
 
-    print("\n\nBatch Complete! Your YOLO dataset and Scene Metadata are ready.")
+    print("\n\nBatch Complete! Your YOLO-OBB dataset and Scene Metadata are ready.")
 
 if __name__ == "__main__":
     generate_full_batch()

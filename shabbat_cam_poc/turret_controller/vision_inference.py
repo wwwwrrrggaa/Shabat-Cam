@@ -1,38 +1,50 @@
-"""vision_inference.py
-
-Stub vision inference module that would run the trained YOLO model and depth processor
-and emit simple detection events suitable for the FSM.
-"""
-from __future__ import annotations
-
-from typing import Any, Dict
-import numpy as np
+from ultralytics import YOLO
 
 
-class VisionInference:
-    def __init__(self) -> None:
-        # placeholder for model handles
-        self.model = None
+class VisionTracker:
+    def __init__(self, model_path="best.pt"):
+        print(f"[Vision] Loading Tactical Model: {model_path}")
+        self.model = YOLO(model_path)
+        # Dictionary to map YOLO class indices to names
+        self.names = {0: "Shell", 1: "Propellant"}
 
-    def infer(self, frame: Any) -> Dict[str, Any]:
-        """Run inference on a single frame and return detections + depth.
-
-        This is a fake implementation for dry-run/testing.
+    def process_frame(self, frame):
         """
-        print("[VisionInference] infer called")
-        # fake detection: say we found a shell at center
-        h, w = (frame.shape[0], frame.shape[1]) if hasattr(frame, "shape") else (480, 640)
-        detection = {
-            "class": "shell",
-            "confidence": 0.95,
-            "bbox": [w // 2 - 10, h // 2 - 10, w // 2 + 10, h // 2 + 10],
-        }
-        depth_map = np.zeros((h, w), dtype=float)
-        return {"detections": [detection], "depth": depth_map}
+        Runs YOLO OBB + BoT-SORT tracking on a single frame.
+        Returns a list of detected objects formatted for the FSM.
+        """
+        # persist=True keeps the tracker memory alive across frames
+        # tracker="botsort.yaml" is the modern, highly-accurate alternative to DeepSORT
+        results = self.model.track(
+            frame, persist=True, tracker="botsort.yaml", verbose=False
+        )
 
+        tracked_objects = []
 
-if __name__ == "__main__":
-    vi = VisionInference()
-    out = vi.infer(None)
-    print(out)
+        if results[0].obb is not None:
+            obbs = results[0].obb
+            for i in range(len(obbs)):
+                # Extract class and confidence
+                cls_id = int(obbs.cls[i].item())
+                conf = obbs.conf[i].item()
 
+                # Extract Tracking ID (if tracker lost it momentarily, skip)
+                if obbs.id is None:
+                    continue
+                track_id = int(obbs.id[i].item())
+
+                # Extract the 4 corners of the OBB [x1, y1, x2, y2, x3, y3, x4, y4]
+                # Flatten the (4, 2) array into a flat list of 8 floats
+                points = obbs.xyxyxyxy[i].cpu().numpy().flatten().tolist()
+
+                tracked_objects.append(
+                    {
+                        "id": track_id,
+                        "class": cls_id,
+                        "name": self.names[cls_id],
+                        "conf": conf,
+                        "bbox": points,
+                    }
+                )
+
+        return tracked_objects
